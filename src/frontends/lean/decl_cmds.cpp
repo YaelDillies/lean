@@ -146,7 +146,6 @@ static environment declare_var(parser & p, environment env,
         }
         if (meta.m_modifiers.m_is_protected)
             env = add_protected(env, full_n);
-        env = ensure_decl_namespaces(env, full_n);
         /* Apply attributes last so that they may access any information on the new decl */
         env = meta.m_attrs.apply(env, p.ios(), full_n);
         return env;
@@ -556,18 +555,34 @@ static environment modifiers_cmd(parser & p, ast_id & cmd_id, cmd_meta const & _
     }
 
     if (p.curr_is_token(get_noncomputable_tk())) {
-        if (!tk) tk = p.new_ast(get_noncomputable_tk(), p.pos()).m_id;
+        auto& ast = p.new_ast(get_noncomputable_tk(), p.pos());
+        if (!tk) tk = ast.m_id;
         mods.push(tk);
         tk = 0;
         p.next();
-        if (!meta.m_attrs && !meta.m_modifiers && p.curr_is_token_or_id(get_theory_tk())) {
-            cmd_id = p.new_ast(get_theory_tk(), p.pos()).push(mods.m_id).m_id;
-            // `noncomputable theory`
+        bool force_noncomputable = false;
+        if (p.curr_is_token_or_id(get_exclam_tk())) {
+            ast.push(p.new_ast(get_exclam_tk(), p.pos()).m_id);
             p.next();
-            p.set_ignore_noncomputable();
+            force_noncomputable = true;
+        } else {
+            ast.push(0);
+        }
+        if (!meta.m_attrs && !meta.m_modifiers && p.curr_is_token_or_id(get_theory_tk())) {
+            if (force_noncomputable) {
+                throw parser_error("invalid 'noncomputable! theory', unsupported noncomputability policy", p.pos());
+            }
+            // `noncomputable theory`
+            cmd_id = p.new_ast(get_theory_tk(), p.pos()).push(mods.m_id).m_id;
+            p.next();
+            p.set_noncomputable_policy(noncomputable_policy::Auto);
             return p.env();
         } else {
-            meta.m_modifiers.m_is_noncomputable = true;
+            if (force_noncomputable) {
+                meta.m_modifiers.m_noncomputable = noncomputable_modifier::ForceNoncomputable;
+            } else {
+                meta.m_modifiers.m_noncomputable = noncomputable_modifier::Noncomputable;
+            }
         }
     }
     if (p.curr_is_token(get_meta_tk())) {

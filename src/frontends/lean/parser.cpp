@@ -164,7 +164,7 @@ parser::parser(environment const & env, io_state const & ios,
     m_scanner(strm, m_file_name.c_str()),
     m_ast{new ast_data(0, {}, {}), new ast_data(AST_TOP_ID, {}, "file")} {
     m_next_inst_idx = 1;
-    m_ignore_noncomputable = false;
+    m_noncomputable_policy = noncomputable_policy::Validate;
     m_in_quote = false;
     m_in_pattern = false;
     m_has_params = false;
@@ -279,7 +279,7 @@ tag parser::get_tag(expr e) {
 
 ast_data & parser::new_ast(name type, pos_info start, name value) {
     ast_id id = m_ast.size();
-    m_ast.push_back(new ast_data{id, start, type, value});
+    m_ast.push_back(new ast_data{id, start, pos(), type, value});
     return *m_ast.back();
 }
 
@@ -1037,7 +1037,7 @@ expr parser::parse_binder(unsigned rbp) {
 /* Lean allow binders of the form <tt>ID_1 ... ID_n 'op' S</tt>
    Where 'op' is an infix operator, and s an expression (i.e., "collection").
    This notation expands to:
-     (ID_1 ... ID_n : _) (H_1 : ID_1 'op' S) ... (H_n : ID_n 'op' S)
+     (ID_1 : _) (H_1 : ID_1 'op' S) ... (ID_n : _) (H_n : ID_n 'op' S)
 
    This method return true if the next token is an infix operator,
    and populates r with the locals above.
@@ -1064,24 +1064,18 @@ ast_id parser::parse_binder_collection(buffer<pair<pos_info, name>> const & name
     next(); // consume tk
     expr S        = parse_expr(rbp);
     ast_id id = new_ast("collection", names[0].first, acc.get_name()).push(get_id(S)).m_id;
-    unsigned old_sz = r.size();
-    /* Add (ID_1 ... ID_n : _) to r */
     for (auto p : names) {
+        /* Add (ID_i : _) to r */
         expr arg_type = save_pos(mk_expr_placeholder(), p.first);
-        expr local = save_pos(mk_local(p.second, arg_type, bi), p.first);
-        add_local(local);
-        r.push_back(local);
-    }
-    /* Add (H_1 : ID_1 'op' S) ... (H_n : ID_n 'op' S) */
-    unsigned i = old_sz;
-    for (auto p : names) {
-        expr ID      = r[i];
+        expr ID = save_pos(mk_local(p.second, arg_type, bi), p.first);
+        add_local(ID);
+        r.push_back(ID);
+        /* Add (H_i : ID_i 'op' S) */
         expr args[2] = {ID, S};
         expr ID_op_S = instantiate_rev(pred, 2, args);
         expr local = save_pos(mk_local("H", ID_op_S, bi), p.first);
         add_local(local);
         r.push_back(local);
-        i++;
     }
     return id;
 }
@@ -2083,18 +2077,7 @@ expr parser::patexpr_to_expr_core(expr const & pat_or_expr) {
     return patexpr_to_expr_fn(*this)(pat_or_expr);
 }
 
-optional<expr> parser::resolve_local(name const & id, pos_info const & p, list<name> const & extra_locals,
-                                     bool allow_field_notation) {
-    /* Remark: (auxiliary) local constants many not be atomic.
-       Example: when elaborating
-
-          protected def list.sizeof {α : Type u} [has_sizeof α] : list α → nat
-          | list.nil        := 1
-          | (list.cons a l) := 1 + sizeof a + list.sizeof l
-
-       the local context will contain the auxiliary local constant `list.size_of`
-    */
-
+optional<expr> parser::resolve_local(name const & id, pos_info const & p, list<name> const & extra_locals) {
     // extra locals
     unsigned vidx = 0;
     for (name const & extra : extra_locals) {
@@ -2108,17 +2091,7 @@ optional<expr> parser::resolve_local(name const & id, pos_info const & p, list<n
         return some_expr(copy_with_new_pos(*it1, p));
     }
 
-    if (allow_field_notation && !id.is_atomic() && id.is_string()) {
-        if (auto r = resolve_local(id.get_prefix(), p, extra_locals)) {
-            auto field_pos = p;
-            field_pos.second += id.get_prefix().utf8_size();
-            return some_expr(save_pos(mk_field_notation_compact(*r, id.get_string()), field_pos));
-        } else {
-            return none_expr();
-        }
-    } else {
-        return none_expr();
-    }
+    return none_expr();
 }
 
 static expr mk_constant(parser & p, const name & id, const levels & ls, const ast_data & id_data, ast_id levels_id) {
@@ -2189,10 +2162,31 @@ expr parser::id_to_expr(name const & id, ast_data & id_data,
         return r;
     }
 
-    if (auto r = resolve_local(id, p, extra_locals, allow_field_notation)) {
+    if (auto r = resolve_local(id, p, extra_locals)) {
         check_no_levels(ls, p);
         finalize_ast(id_data.m_id, *r);
         return *r;
+    }
+
+    if (allow_field_notation && !id.is_atomic() && id.is_string()) {
+        /* Remark: (auxiliary) local constants many not be atomic.
+            Example: when elaborating
+
+            protected def list.sizeof {α : Type u} [has_sizeof α] : list α → nat
+            | list.nil        := 1
+            | (list.cons a l) := 1 + sizeof a + list.sizeof l
+
+            the local context will contain the auxiliary local constant `list.size_of`
+        */
+        name prefix = id.get_prefix();
+        if (auto r = resolve_local(prefix, p, extra_locals)) {
+            check_no_levels(ls, p);
+            id_data.m_value = prefix;
+            finalize_ast(id_data.m_id, *r);
+            auto field_pos = p;
+            field_pos.second += prefix.utf8_size();
+            return mk_field_notation_compact(*this, *r, field_pos, id.get_string());
+        }
     }
 
     if (!explicit_levels && m_id_behavior == id_behavior::AssumeLocalIfNotLocal) {
@@ -2343,7 +2337,6 @@ expr parser::parse_id(bool allow_field_notation) {
     ast_id aid; name id;
     std::tie(aid, id) = check_id_next("", break_at_pos_exception::token_context::expr);
     expr e = id_to_expr(id, get_ast(aid), /* resolve_only */ false, allow_field_notation);
-    finalize_ast(aid, e);
     if (is_constant(e) && get_global_info_manager()) {
         get_global_info_manager()->add_const_info(m_env, p, const_name(e));
     }
@@ -2911,7 +2904,7 @@ std::shared_ptr<snapshot> parser::mk_snapshot() {
     return std::make_shared<snapshot>(
             m_env, m_ngen, m_local_level_decls, m_local_decls,
             m_level_variables, m_variables, m_include_vars,
-            m_ios.get_options(), m_imports_parsed, m_ignore_noncomputable, m_parser_scope_stack, m_next_inst_idx, pos());
+            m_ios.get_options(), m_imports_parsed, m_noncomputable_policy, m_parser_scope_stack, m_next_inst_idx, pos());
 }
 
 optional<pos_info> parser::get_pos_info(expr const & e) const {
@@ -2965,7 +2958,7 @@ void parser::from_snapshot(snapshot const & s) {
     m_variables          = s.m_vars;
     m_include_vars       = s.m_include_vars;
     m_imports_parsed     = s.m_imports_parsed;
-    m_ignore_noncomputable = s.m_noncomputable_theory;
+    m_noncomputable_policy = s.m_noncomputable_policy;
     m_parser_scope_stack = s.m_parser_scope_stack;
     m_next_inst_idx      = s.m_next_inst_idx;
     m_ast_invalid        = true; // invalidate AST because we don't snapshot it

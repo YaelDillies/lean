@@ -18,12 +18,14 @@ Author: Leonardo de Moura
 #include "util/sstream.h"
 #include "util/buffer.h"
 #include "util/interrupt.h"
+#include "util/name.h"
 #include "util/name_map.h"
 #include "util/file_lock.h"
 #include "kernel/type_checker.h"
 #include "kernel/quotient/quotient.h"
 #include "library/module.h"
 #include "library/noncomputable.h"
+#include "library/private.h"
 #include "library/sorry.h"
 #include "library/constants.h"
 #include "library/kernel_serializer.h"
@@ -251,7 +253,7 @@ void write_module(loaded_module const & mod, std::ostream & out) {
     }
 
     std::string r = out1.str();
-    unsigned blob_hash = hash_data(r);
+    uint64 blob_hash = hash64_str(r);
 
     bool uses_sorry = get(mod.m_uses_sorry);
 
@@ -269,7 +271,7 @@ void write_module(loaded_module const & mod, std::ostream & out) {
     s2.write_blob(r);
 }
 
-void write_module_tlean(loaded_module const & mod, std::ostream & out) {
+void write_module_tlean(loaded_module const & mod, environment const & env, std::ostream & out) {
     out << "IMPORT " << static_cast<unsigned>(mod.m_imports.size()) << " ";
 
     for (auto import : mod.m_imports) {
@@ -278,8 +280,8 @@ void write_module_tlean(loaded_module const & mod, std::ostream & out) {
     }
     out << "\n";
 
-    tlean_exporter x(out, get(mod.m_env));
-    for (auto p : mod.m_modifications) {
+    tlean_exporter x(out, env);
+    for (auto & p : mod.m_modifications) {
         p->textualize(x);
     }
 
@@ -292,7 +294,7 @@ static task<bool> has_sorry(modification_list const & mods) {
     return any(introduced_exprs, [] (expr const & e) { return has_sorry(e); });
 }
 
-loaded_module export_module(environment const & env, std::string const & mod_name, unsigned src_hash, unsigned trans_hash) {
+loaded_module export_module(environment const & env, std::string const & mod_name, uint64 src_hash, uint64 trans_hash) {
     loaded_module out;
     out.m_module_name = mod_name;
 
@@ -523,11 +525,13 @@ static task<bool> error_already_reported() {
     return any(children, [] (bool already_reported) { return already_reported; });
 }
 
-environment add(environment const & env, certified_declaration const & d) {
+environment add(environment const & env, certified_declaration const & d, bool force_noncomputable) {
     environment new_env = env.add(d);
     declaration _d = d.get_declaration();
-    if (!check_computable(new_env, _d.get_name()))
+    if (force_noncomputable || !check_computable(new_env, _d.get_name()))
         new_env = mark_noncomputable(new_env, _d.get_name());
+    if (!is_private(new_env, _d.get_name()))
+        new_env = add_parent_namespaces(new_env, strip_internal_suffixes(_d.get_name()));
     new_env = update_module_defs(new_env, _d);
     new_env = add(new_env, std::make_shared<decl_modification>(_d, env.trust_lvl()));
 
@@ -604,7 +608,7 @@ optional<declaration> is_decl_modification(modification const & mod) {
 
 } // end of namespace module
 
-optional<unsigned> src_hash_if_is_candidate_olean(std::string const & file_name) {
+optional<uint64> src_hash_if_is_candidate_olean(std::string const & file_name) {
     std::ifstream in(file_name, std::ios_base::binary);
     deserializer d1(in, optional<std::string>(file_name));
     std::string header, version;
@@ -616,9 +620,9 @@ optional<unsigned> src_hash_if_is_candidate_olean(std::string const & file_name)
     if (version != get_version_string())
         return {};
 #endif
-    unsigned olean_src_hash;
+    uint64 olean_src_hash;
     d1 >> olean_src_hash;
-    return some<unsigned>(olean_src_hash);
+    return some<uint64>(olean_src_hash);
 }
 
 olean_data parse_olean(std::istream & in, std::string const & file_name, bool check_hash) {
@@ -627,7 +631,7 @@ olean_data parse_olean(std::istream & in, std::string const & file_name, bool ch
 
     deserializer d1(in, optional<std::string>(file_name));
     std::string header, version;
-    unsigned src_hash, trans_hash, claimed_blob_hash;
+    uint64 src_hash, trans_hash, claimed_blob_hash;
     d1 >> header;
     if (header != g_olean_header)
         throw exception(sstream() << "file '" << file_name << "' does not seem to be a valid object Lean file, invalid header");
@@ -651,7 +655,7 @@ olean_data parse_olean(std::istream & in, std::string const & file_name, bool ch
 
 //    if (m_senv.env().trust_lvl() <= LEAN_BELIEVER_TRUST_LEVEL) {
     if (check_hash) {
-        unsigned computed_hash = hash_data(code);
+        uint64 computed_hash = hash64_str(code);
         if (claimed_blob_hash != computed_hash)
             throw exception(sstream() << "file '" << file_name << "' has been corrupted, checksum mismatch");
     }

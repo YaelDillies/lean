@@ -111,7 +111,7 @@ they are sometimes dummy values. Use `tactic.infer_type` instead. -/
 
 variable {elab : bool}
 
-meta instance : inhabited expr := ⟨expr.sort level.zero⟩
+meta instance : inhabited (expr elab) := ⟨expr.sort level.zero⟩
 
 /-- Get the name of the macro definition. -/
 meta constant expr.macro_def_name (d : macro_def) : name
@@ -146,8 +146,8 @@ meta instance : has_to_string (expr elab) := ⟨expr.to_string⟩
 meta instance : has_to_format (expr elab) := ⟨λ e, e.to_string⟩
 
 /-- Coercion for letting users write (f a) instead of (expr.app f a) -/
-meta instance : has_coe_to_fun (expr elab) :=
-{ F := λ e, expr elab → expr elab, coe := λ e, expr.app e }
+meta instance : has_coe_to_fun (expr elab) (λ e, expr elab → expr elab) :=
+⟨λ e, expr.app e⟩
 
 /-- Each expression created by Lean carries a hash.
 This is calculated upon creation of the expression.

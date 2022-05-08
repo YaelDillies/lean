@@ -119,6 +119,7 @@ static optional<unsigned> to_unsigned(expr const & e) {
 
 static name * g_pp_using_anonymous_constructor = nullptr;
 static name * g_pp_nodot = nullptr;
+static name * g_pp_numeral_type = nullptr;
 
 bool pp_using_anonymous_constructor(environment const & env, name const & n) {
     return has_attribute(env, *g_pp_using_anonymous_constructor, n);
@@ -126,6 +127,10 @@ bool pp_using_anonymous_constructor(environment const & env, name const & n) {
 
 bool pp_nodot(environment const & env, name const & n) {
     return has_attribute(env, *g_pp_nodot, n);
+}
+
+bool pp_numeral_type(environment const & env, name const & n) {
+    return has_attribute(env, *g_pp_numeral_type, n);
 }
 
 void initialize_pp() {
@@ -153,6 +158,7 @@ void initialize_pp() {
 
     g_pp_using_anonymous_constructor = new name("pp_using_anonymous_constructor");
     g_pp_nodot = new name("pp_nodot");
+    g_pp_numeral_type = new name("pp_numeral_type");
 
     register_system_attribute(basic_attribute::with_check(
                                   *g_pp_using_anonymous_constructor,
@@ -165,11 +171,15 @@ void initialize_pp() {
                                               "only structures can be marked with this attribute");
                                               }));
     register_system_attribute(basic_attribute(*g_pp_nodot, "Do not pretty-print using dot-notation."));
+    register_system_attribute(basic_attribute(*g_pp_numeral_type,
+                                              "Pretty print type ascription when displaying numerals "
+                                              "whose type's head is tagged with this attribute."));
 }
 
 void finalize_pp() {
     delete g_pp_nodot;
     delete g_pp_using_anonymous_constructor;
+    delete g_pp_numeral_type;
     delete g_nat_numeral_pp;
     delete g_ellipsis_n_fmt;
     delete g_ellipsis_fmt;
@@ -346,6 +356,7 @@ void pretty_fn<T>::set_options_core(options const & _o) {
     m_unicode           = get_pp_unicode(o);
     m_coercion          = get_pp_coercions(o);
     m_notation          = get_pp_notation(o);
+    m_parens            = get_pp_parens(o);
     m_universes         = get_pp_universes(o);
     m_full_names        = get_pp_full_names(o);
     m_private_names     = get_pp_private_names(o);
@@ -354,6 +365,8 @@ void pretty_fn<T>::set_options_core(options const & _o) {
     m_locals_full_names = get_pp_locals_full_names(o);
     m_beta              = get_pp_beta(o);
     m_numerals          = get_pp_numerals(o);
+    m_numeral_types     = get_pp_numeral_types(o);
+    m_nat_numerals      = m_numerals && get_pp_nat_numerals(o);
     m_strings           = get_pp_strings(o);
     m_preterm           = get_pp_preterm(o);
     m_binder_types      = get_pp_binder_types(o);
@@ -362,7 +375,6 @@ void pretty_fn<T>::set_options_core(options const & _o) {
     m_use_holes         = get_pp_use_holes(o);
     m_annotations       = get_pp_annotations(o);
     m_hide_full_terms   = get_formatter_hide_full_terms(o);
-    m_num_nat_coe       = m_numerals;
     m_structure_instances = get_pp_structure_instances(o);
     m_structure_instances_qualifier = get_pp_structure_instances_qualifier(o);
     m_structure_projections         = get_pp_structure_projections(o);
@@ -603,7 +615,7 @@ static bool is_coercion(expr const & e) {
 }
 
 static bool is_coercion_fn(expr const & e) {
-    return is_app_of(e, get_coe_fn_name()) && get_app_num_args(e) >= 3;
+    return is_app_of(e, get_coe_fn_name()) && get_app_num_args(e) >= 4;
 }
 
 template<class T>
@@ -628,10 +640,10 @@ auto pretty_fn<T>::pp_hide_coercion_fn(expr const & e, unsigned bp, bool ignore_
     lean_assert(is_coercion_fn(e));
     buffer<expr> args;
     get_app_args(e, args);
-    if (args.size() == 3) {
-        return pp_child_at(args[2], bp, expr_address::app(args.size(), 2), ignore_hide);
+    if (args.size() == 4) {
+        return pp_child_at(args[2], bp, expr_address::app(args.size(), 3), ignore_hide);
     } else {
-        expr new_e = mk_app(args.size() - 2, args.data() + 2);
+        expr new_e = mk_app(args.size() - 3, args.data() + 3);
         // [todo] pp_child needs to know that `f` now has a different address. (see above)
         address_give_up_scope _(*this);
         return pp_child(new_e, bp, ignore_hide);
@@ -646,7 +658,7 @@ auto pretty_fn<T>::pp_child(expr const & e, unsigned bp, bool ignore_hide, bool 
         }
         if (m_numerals) {
             if (auto n = to_num(e)) {
-                return tag(m_address, e, pp_num(*n, bp));
+                return tag(m_address, e, pp_num(e, *n, bp));
             }
         }
         if (m_strings) {
@@ -1134,9 +1146,10 @@ auto pretty_fn<T>::pp_have(expr const & e) -> result {
     expr local   = p.second;
     expr body    = p.first;
     name const & n = mlocal_pp_name(local);
-    T type_fmt  = pp_child_at(mlocal_type(local), 0, expr_address::mlocal_type(local)).fmt();
+    T type_fmt  = pp_child_at(mlocal_type(local), 0,
+        append(expr_address::binding_type(binding), expr_address::fn())).fmt();
     T proof_fmt = pp_child_at(proof, 0, expr_address::arg()).fmt();
-    T body_fmt  = pp_child_at(body, 0, expr_address::lam_body()).fmt();
+    T body_fmt  = pp_child_at(body, 0, append(expr_address::lam_body(), expr_address::fn())).fmt();
     T head_fmt  = *g_have_fmt;
     T r = head_fmt + space() + escape(n) + space();
     r += colon() + nest(m_indent, line() + type_fmt + comma() + space() + *g_from_fmt);
@@ -1371,15 +1384,32 @@ auto pretty_fn<T>::pp_let(expr e) -> result {
     r += line() + *g_in_fmt + space() + nest(2 + 1, b);
     return result(0, r);
 }
+
 template<class T>
-auto pretty_fn<T>::pp_num(mpz const & n, unsigned bp) -> result {
-    if (n.is_neg()) {
+bool pretty_fn<T>::is_num_type_candidate(expr const & e) {
+    if (m_numeral_types) {
+        return true;
+    }
+    auto ty = get_app_fn(infer_type(e));
+    if (!is_constant(ty)) {
+        return false;
+    }
+    return pp_numeral_type(m_env, const_name(ty));
+}
+
+template<class T>
+auto pretty_fn<T>::pp_num(expr const & e, mpz const & n, unsigned bp) -> result {
+    auto r = T(n.to_string());
+    if (is_num_type_candidate(e)) {
+        r += space() + compose(colon(), nest(m_indent, compose(line(), pp_child(infer_type(e), 0).fmt())));
+        r = paren(r);
+    } else if (n.is_neg()) {
         auto prec = get_expr_precedence(m_token_table, "-");
-        if (!prec || bp > *prec) {
-            return result(paren(T(n.to_string())));
+        if (m_parens || !prec || bp > *prec) {
+            r = paren(r);
         }
     }
-    return result(T(n.to_string()));
+    return result(r);
 }
 
 // Return the number of parameters in a notation declaration.
@@ -1521,7 +1551,7 @@ auto pretty_fn<T>::pp_notation_child(expr const & e, unsigned rbp, unsigned lbp,
         if (m_numerals) {
             if (auto n = to_num(e)){
                 address_reset_scope ars(*this);
-                return tag(ars.m_adr, e, pp_num(*n, lbp));
+                return tag(ars.m_adr, e, pp_num(e, *n, lbp));
             }
         }
         if (m_strings) {
@@ -1763,7 +1793,11 @@ auto pretty_fn<T>::pp_notation(notation_entry const & entry, buffer<optional<sub
             T e_fmt = pp_notation_child(e.first, 0, token_lbp).fmt();
             fmt = e_fmt + fmt;
         }
-        return optional<result>(result(first_lbp, last_rbp, group(nest(m_indent, fmt))));
+        if (m_parens) {
+          return optional<result>(result(paren(fmt)));
+        } else {
+          return optional<result>(result(first_lbp, last_rbp, group(nest(m_indent, fmt))));
+        }
     }
 }
 template<class T>
@@ -1967,7 +2001,7 @@ auto pretty_fn<T>::pp_core(expr const & e, bool ignore_hide) -> result {
     m_num_steps++;
 
     if (m_numerals) {
-        if (auto n = to_num(e)) return pp_num(*n, 0);
+        if (auto n = to_num(e)) return pp_num(e, *n, 0);
     }
     if (m_strings) {
         if (auto r = to_string(e))      return T(pp_string_literal(*r));
@@ -2003,9 +2037,10 @@ auto pretty_fn<T>::pp_core(expr const & e, bool ignore_hide) -> result {
     if (is_show(e))         return pp_show(e);
     if (is_have(e))         return pp_have(e);
     if (is_typed_expr(e))   return pp(get_typed_expr_expr(e));
-    if (m_num_nat_coe)
-        if (auto k = to_unsigned(e))
-            return T(format(*k));
+    if (m_nat_numerals)
+        if (auto k = to_unsigned(e)) {
+            return pp_num(e, static_cast<mpz>(*k), 0);
+        }
     switch (e.kind()) {
     case expr_kind::Var:       return pp_var(e);
     case expr_kind::Sort:      return pp_sort(e);

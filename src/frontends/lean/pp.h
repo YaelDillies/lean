@@ -74,8 +74,8 @@ private:
     bool                    m_proofs;           //!< if true show proof terms
     bool                    m_unicode;          //!< if true use unicode chars
     bool                    m_coercion;         //!< if true show coercions
-    bool                    m_num_nat_coe;      //!< true when !m_coercion && env has coercion from num -> nat
     bool                    m_notation;
+    bool                    m_parens;
     bool                    m_universes;
     bool                    m_full_names;
     bool                    m_private_names;
@@ -84,6 +84,8 @@ private:
     bool                    m_locals_full_names;
     bool                    m_beta;
     bool                    m_numerals;
+    bool                    m_numeral_types;
+    bool                    m_nat_numerals;
     bool                    m_strings;
     bool                    m_hide_full_terms;
     bool                    m_hide_comp_irrel;
@@ -167,7 +169,8 @@ private:
     result pp_explicit(expr const & e);
     result pp_delayed_abstraction(expr const & e);
     result pp_let(expr e);
-    result pp_num(mpz const & n, unsigned bp);
+    bool is_num_type_candidate(expr const & e);
+    result pp_num(expr const & e, mpz const & n, unsigned bp);
     result pp_prod(expr const & e);
     void   set_options_core(options const & o);
     expr   infer_type(expr const & e);

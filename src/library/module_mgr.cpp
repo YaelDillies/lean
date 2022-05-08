@@ -184,7 +184,7 @@ void module_mgr::build_module(module_id const & id, bool can_use_olean, name_set
             }
 
             mod->m_lt = lt.get();
-            unsigned actual_trans_hash = mod->m_src_hash;
+            uint64 actual_trans_hash = mod->m_src_hash;
 
             for (auto & d : parsed_olean.m_imports) {
                 auto d_id = resolve(d, id);
@@ -284,8 +284,8 @@ void module_mgr::build_lean(std::shared_ptr<module_info> const & mod, name_set c
     }
 
     auto initial_env = m_initial_env;
-    unsigned src_hash = mod->m_src_hash;
-    unsigned trans_hash = mod->m_trans_hash;
+    uint64 src_hash = mod->m_src_hash;
+    uint64 trans_hash = mod->m_trans_hash;
     mod->m_result = map<module_info::parse_result>(
         get_end(snapshots),
         [id, initial_env, ldr, src_hash, trans_hash]
@@ -319,16 +319,16 @@ void module_mgr::build_lean(std::shared_ptr<module_info> const & mod, name_set c
 
     if (m_export_tlean) {
         if (!mod_dep) mod_dep = module_deep_dependency(mod->m_result);
-        mod->m_tlean_export = add_library_task(task_builder<unit>([mod] {
+        mod->m_tlean_export = add_library_task(task_builder<unit>([mod, mod_parser_fn] {
             auto res = get(mod->m_result);
             auto tlean_fn = tlean_of_lean(mod->m_id);
             exclusive_file_lock output_lock(tlean_fn);
             std::ofstream out(tlean_fn);
-            write_module_tlean(*res.m_loaded_module, out);
+            write_module_tlean(*res.m_loaded_module, mod_parser_fn->get_parser().env(), out);
             out.close();
             if (!out) throw exception(sstream() << "failed to write tlean file: " << tlean_fn);
             return unit();
-        }).depends_on(mod_dep), std::string("exporting AST"));
+        }).depends_on(mod_dep), std::string("exporting tlean"));
     }
 }
 
@@ -475,10 +475,10 @@ std::shared_ptr<module_info> fs_module_vfs::load_module(module_id const & id, bo
     auto lean_fname = id;
 
     std::string lean_src;
-    optional<unsigned> src_hash = {};
+    optional<uint64> src_hash = {};
     if (file_exists(lean_fname)) {
         lean_src = read_file(lean_fname);
-        src_hash = some<unsigned>(hash_data(remove_cr(lean_src)));
+        src_hash = some<uint64>(hash64_str(remove_cr(lean_src)));
     }
 
     try {
@@ -487,7 +487,7 @@ std::shared_ptr<module_info> fs_module_vfs::load_module(module_id const & id, bo
             can_use_olean &&
             !m_modules_to_load_from_source.count(id)) {
             shared_file_lock olean_lock(olean_fname);
-            optional<unsigned> olean_src_hash = src_hash_if_is_candidate_olean(olean_fname);
+            optional<uint64> olean_src_hash = src_hash_if_is_candidate_olean(olean_fname);
             // If there is a valid .olean AND
             // (there is no source file OR there is one and it matches the hash stored in the .olean), load the .olean.
             if (olean_src_hash.has_value() &&

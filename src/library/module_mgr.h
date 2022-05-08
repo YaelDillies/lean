@@ -33,12 +33,12 @@ struct module_info {
     module_id m_id;
     std::string m_contents;
     // Hash of the Lean source (after normalizing line endings) yielding this module:
-    // - if m_source == LEAN, hash_data(remove_cr(m_contents))
+    // - if m_source == LEAN, hash64_str(remove_cr(m_contents))
     // - if m_source == OLEAN, value loaded from the .olean
-    unsigned m_src_hash;
+    uint64 m_src_hash;
     // Transitive hash of all source code this module was built from,
     // i.e. m_src_hash mixed with the m_trans_hash of each imported module
-    unsigned m_trans_hash;
+    uint64 m_trans_hash;
     module_src m_source = module_src::LEAN;
 
     struct dependency {
@@ -71,7 +71,7 @@ struct module_info {
 
     module_info() {}
 
-    module_info(module_id const & id, std::string const & contents, unsigned src_hash, unsigned trans_hash, module_src src)
+    module_info(module_id const & id, std::string const & contents, uint64 src_hash, uint64 trans_hash, module_src src)
             : m_id(id), m_contents(contents), m_src_hash(src_hash), m_trans_hash(trans_hash), m_source(src) {}
 };
 
@@ -98,6 +98,8 @@ class module_mgr {
     bool m_use_old_oleans = false;
     bool m_report_widgets = true;
     bool m_export_ast = false;
+    bool m_export_tsast = false;
+    bool m_export_tspp = false;
     bool m_export_tlean = false;
 
     search_path m_path;
@@ -147,6 +149,10 @@ public:
     bool get_report_widgets() const { return m_report_widgets; }
     void set_export_ast(bool export_ast) { m_export_ast = export_ast; }
     void set_export_tlean(bool export_tlean) { m_export_tlean = export_tlean; }
+    void set_export_tsast(bool export_tsast) { m_export_tsast = export_tsast; }
+    bool get_export_tsast() { return m_export_tsast; }
+    void set_export_tspp(bool export_tspp) { m_export_tspp = export_tspp; }
+    bool get_export_tspp() { return m_export_tspp; }
 
     environment get_initial_env() const { return m_initial_env; }
     options get_options() const { return m_ios.get_options(); }

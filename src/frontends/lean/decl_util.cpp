@@ -17,6 +17,7 @@ Author: Leonardo de Moura
 #include "library/private.h"
 #include "library/aliases.h"
 #include "library/explicit.h"
+#include "library/constants.h"
 #include "library/reducible.h"
 #include "library/scoped_ext.h"
 #include "library/tactic/elaborate.h"
@@ -54,14 +55,14 @@ ast_id parse_univ_params(parser & p, buffer<name> & lp_names) {
 /*
 Naming instances.
 
-For `instance [...] : C t u (D x y)`, we generate the name `D.C`.
+For `instance [...] : C (D x y) t u`, we generate the name `D.C`.
 However, we remove the current namespace if it is a prefix of `C` and/or `D`.
 (Exception: if `C` *equals* the current namespace, we keep the last component of `C`.
 Otherwise, the resulting name would be the same as `D`,
 which could be a name in the current namespace.)
 The current namespace will implicitly be prepended to the resulting name.
 
-For `instance [...] : C t u α`, where `α` is a variable
+For `instance [...] : C α t u`, where `α` is a variable
 (at parse time--it might turn into a coercion later, during typechecking)
 we generate the name `C`, stripping off the current namespace if possible.
 The heuristic can fail in the presence of parameters.
@@ -109,13 +110,18 @@ optional<name> heuristic_inst_name(name const & ns, expr const & type) {
     while (is_pi(it)) it = binding_body(it);
 
     // Extract type class name.
-    expr const & C = get_app_fn(it);
+    buffer<expr> args;
+    expr const & C = get_app_args(it, args);
     if (!is_constant(C)) return {};
     name class_name = const_name(C);
 
     // Look at head symbol of last argument.
-    if (!is_app(it)) return {};
-    expr arg_head = app_arg(it);
+    if (!args.size()) return {};
+    expr arg_head = args.back();
+    if (class_name == get_has_coe_to_fun_name() || class_name == get_has_coe_to_sort_name()) {
+        // TODO(gabriel): generalize, and pick the last non-out_param argument
+        arg_head = args[0];
+    }
     while (true) {
         if (is_app(arg_head)) {
             arg_head = app_fn(arg_head);
@@ -139,11 +145,14 @@ optional<name> heuristic_inst_name(name const & ns, expr const & type) {
     } else if (is_pi(arg_head)) {
         arg_name = "pi";
     } else if (is_field_notation(arg_head)) {
-        expr lhs = macro_arg(arg_head, 0);
-        arg_name = get_field_notation_field_name(arg_head);
+        if (is_anonymous_field_notation(arg_head))
+            arg_name = name("field").append_after(get_field_notation_field_idx(arg_head));
+        else
+            arg_name = get_field_notation_field_name(arg_head);
 
         // The field projection does not have the full name.
         // If we can guess the type of the lhs, prepend it.
+        expr lhs = macro_arg(arg_head, 0);
         if (is_local(lhs)) {
             expr type = get_app_fn(mlocal_type(lhs));
             if (is_constant(type))
@@ -557,6 +566,18 @@ environment add_alias(environment const & env, bool is_protected, name const & c
     }
 }
 
+bool should_force_noncomputable(noncomputable_modifier modifier) {
+    return modifier == noncomputable_modifier::ForceNoncomputable;
+}
+
+bool should_validate_noncomputable(noncomputable_policy policy, noncomputable_modifier modifier) {
+    if (policy == noncomputable_policy::Auto)
+        return false;
+    if (modifier == noncomputable_modifier::ForceNoncomputable)
+        return false;
+    return true;
+}
+
 struct definition_info {
     name     m_prefix; // prefix for local names
     name     m_actual_prefix; // actual prefix used to create kernel declaration names. m_prefix and m_actual_prefix are different for scoped/private declarations.
@@ -567,7 +588,7 @@ struct definition_info {
        Remark: a regular (i.e., non meta) declaration provided by the user may contain a meta subexpression (e.g., tactic).
     */
     bool     m_is_meta{false};      // true iff current block
-    bool     m_is_noncomputable{false};
+    noncomputable_modifier m_noncomputable{noncomputable_modifier::Computable};
     bool     m_is_lemma{false};
     bool     m_aux_lemmas{false};
     unsigned m_next_match_idx{1};
@@ -586,7 +607,7 @@ declaration_info_scope::declaration_info_scope(name const & ns, decl_cmd_kind ki
     info.m_is_private       = modifiers.m_is_private;
     info.m_is_meta_decl     = modifiers.m_is_meta;
     info.m_is_meta          = modifiers.m_is_meta;
-    info.m_is_noncomputable = modifiers.m_is_noncomputable;
+    info.m_noncomputable    = modifiers.m_noncomputable;
     info.m_is_lemma         = kind == decl_cmd_kind::Theorem;
     info.m_aux_lemmas       = kind != decl_cmd_kind::Theorem && !modifiers.m_is_meta;
     info.m_next_match_idx = 1;
@@ -613,7 +634,7 @@ equations_header mk_equations_header(list<name> const & ns, list<name> const & a
     h.m_fn_actual_names  = actual_ns;
     h.m_is_private       = get_definition_info().m_is_private;
     h.m_is_meta          = get_definition_info().m_is_meta;
-    h.m_is_noncomputable = get_definition_info().m_is_noncomputable;
+    h.m_is_noncomputable = get_definition_info().m_noncomputable != noncomputable_modifier::Computable;
     h.m_is_lemma         = get_definition_info().m_is_lemma;
     h.m_aux_lemmas       = get_definition_info().m_aux_lemmas;
     return h;

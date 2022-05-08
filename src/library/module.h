@@ -40,10 +40,11 @@ using modification_list = std::vector<std::shared_ptr<modification const>>;
 struct loaded_module {
     std::string m_module_name;
     std::vector<module_name> m_imports;
-    unsigned m_src_hash, m_trans_hash;
+    uint64 m_src_hash, m_trans_hash;
     modification_list m_modifications;
     task<bool> m_uses_sorry;
 
+    // Only used as a performance optimization to speed up prelude imports.
     task<environment> m_env;
 };
 using module_loader = std::function<std::shared_ptr<loaded_module const> (std::string const &, module_name const &)>;
@@ -90,9 +91,9 @@ optional<pos_info> get_decl_pos_info(environment const & env, name const & decl_
 environment add_transient_decl_pos_info(environment const & env, name const & decl_name, pos_info const & pos);
 
 /** \brief Store/Export module using \c env. */
-loaded_module export_module(environment const & env, std::string const & mod_name, unsigned src_hash, unsigned trans_hash);
+loaded_module export_module(environment const & env, std::string const & mod_name, uint64 src_hash, uint64 trans_hash);
 void write_module(loaded_module const & mod, std::ostream & out);
-void write_module_tlean(loaded_module const & mod, std::ostream & out);
+void write_module_tlean(loaded_module const & mod, environment const & env, std::ostream & out);
 
 std::shared_ptr<loaded_module const> cache_preimported_env(
         loaded_module &&, environment const & initial_env,
@@ -101,12 +102,12 @@ std::shared_ptr<loaded_module const> cache_preimported_env(
 /** \brief Checks whether we should try to load the given .olean file according to its header and Lean version.
  * If yes, returns the hash (after normalizing line endings) of the Lean source to which it corresponds,
  * otherwise returns none. */
-optional<unsigned> src_hash_if_is_candidate_olean(std::string const & file_name);
+optional<uint64> src_hash_if_is_candidate_olean(std::string const & file_name);
 
 struct olean_data {
     std::vector<module_name> m_imports;
     std::string m_serialized_modifications;
-    unsigned m_src_hash, m_trans_hash;
+    uint64 m_src_hash, m_trans_hash;
     bool m_uses_sorry;
 };
 olean_data parse_olean(std::istream & in, std::string const & file_name, bool check_hash = true);
@@ -152,7 +153,7 @@ environment add(environment const & env, std::shared_ptr<modification const> con
 environment add_and_perform(environment const & env, std::shared_ptr<modification const> const & modif);
 
 /** \brief Add the given declaration to the environment, and mark it to be exported. */
-environment add(environment const & env, certified_declaration const & d);
+environment add(environment const & env, certified_declaration const & d, bool force_noncomputable = false);
 
 /** \brief Adds a module-level doc to the current module. */
 environment add_doc_string(environment const & env, std::string const & doc, pos_info pos);

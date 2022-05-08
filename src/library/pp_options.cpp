@@ -20,6 +20,10 @@ Author: Leonardo de Moura
 #define LEAN_DEFAULT_PP_NOTATION true
 #endif
 
+#ifndef LEAN_DEFAULT_PP_PARENS
+#define LEAN_DEFAULT_PP_PARENS false
+#endif
+
 #ifndef LEAN_DEFAULT_PP_IMPLICIT
 #define LEAN_DEFAULT_PP_IMPLICIT false
 #endif
@@ -62,6 +66,14 @@ Author: Leonardo de Moura
 
 #ifndef LEAN_DEFAULT_PP_NUMERALS
 #define LEAN_DEFAULT_PP_NUMERALS true
+#endif
+
+#ifndef LEAN_DEFAULT_PP_NUMERAL_TYPES
+#define LEAN_DEFAULT_PP_NUMERAL_TYPES false
+#endif
+
+#ifndef LEAN_DEFAULT_PP_NAT_NUMERALS
+#define LEAN_DEFAULT_PP_NAT_NUMERALS true
 #endif
 
 #ifndef LEAN_DEFAULT_PP_STRINGSS
@@ -132,6 +144,7 @@ namespace lean {
 static name * g_pp_max_depth         = nullptr;
 static name * g_pp_max_steps         = nullptr;
 static name * g_pp_notation          = nullptr;
+static name * g_pp_parens            = nullptr;
 static name * g_pp_implicit          = nullptr;
 static name * g_pp_proofs            = nullptr;
 static name * g_pp_coercions         = nullptr;
@@ -143,6 +156,8 @@ static name * g_pp_purify_locals     = nullptr;
 static name * g_pp_locals_full_names = nullptr;
 static name * g_pp_beta              = nullptr;
 static name * g_pp_numerals          = nullptr;
+static name * g_pp_numeral_types     = nullptr;
+static name * g_pp_nat_numerals      = nullptr;
 static name * g_pp_strings           = nullptr;
 static name * g_pp_preterm           = nullptr;
 static name * g_pp_goal_compact      = nullptr;
@@ -165,6 +180,7 @@ void initialize_pp_options() {
     g_pp_max_depth         = new name{"pp", "max_depth"};
     g_pp_max_steps         = new name{"pp", "max_steps"};
     g_pp_notation          = new name{"pp", "notation"};
+    g_pp_parens            = new name{"pp", "parens"};
     g_pp_implicit          = new name{"pp", "implicit"};
     g_pp_proofs            = new name{"pp", "proofs"};
     g_pp_coercions         = new name{"pp", "coercions"};
@@ -176,6 +192,8 @@ void initialize_pp_options() {
     g_pp_locals_full_names = new name{"pp", "locals_full_names"};
     g_pp_beta              = new name{"pp", "beta"};
     g_pp_numerals          = new name{"pp", "numerals"};
+    g_pp_numeral_types     = new name{"pp", "numeral_types"};
+    g_pp_nat_numerals      = new name{"pp", "nat_numerals"};
     g_pp_strings           = new name{"pp", "strings"};
     g_pp_preterm           = new name{"pp", "preterm"};
     g_pp_binder_types      = new name{"pp", "binder_types"};
@@ -199,6 +217,8 @@ void initialize_pp_options() {
                              "(pretty printer) maximum number of visited expressions, after that it will use ellipsis");
     register_bool_option(*g_pp_notation,  LEAN_DEFAULT_PP_NOTATION,
                          "(pretty printer) disable/enable notation (infix, mixfix, postfix operators and unicode characters)");
+    register_bool_option(*g_pp_parens,  LEAN_DEFAULT_PP_PARENS,
+                         "(pretty printer) if set to true, notation will be wrapped in parentheses regardless of precedence");
     register_bool_option(*g_pp_implicit,  LEAN_DEFAULT_PP_IMPLICIT,
                          "(pretty printer) display implicit parameters");
     register_bool_option(*g_pp_proofs,  LEAN_DEFAULT_PP_PROOFS,
@@ -223,6 +243,10 @@ void initialize_pp_options() {
                          "(pretty printer) apply beta-reduction when pretty printing");
     register_bool_option(*g_pp_numerals, LEAN_DEFAULT_PP_NUMERALS,
                          "(pretty printer) display nat/num numerals in decimal notation");
+    register_bool_option(*g_pp_numeral_types, LEAN_DEFAULT_PP_NUMERAL_TYPES,
+                         "(pretty printer) display types when displaying nat/num numerals");
+    register_bool_option(*g_pp_nat_numerals, LEAN_DEFAULT_PP_NAT_NUMERALS,
+                         "(pretty printer) display unary nats in decimal notation when pp.numeral_types is true");
     register_bool_option(*g_pp_strings, LEAN_DEFAULT_PP_STRINGS,
                          "(pretty printer) pretty print string and character literals");
     register_bool_option(*g_pp_preterm, LEAN_DEFAULT_PP_PRETERM,
@@ -279,10 +303,13 @@ void initialize_pp_options() {
 void finalize_pp_options() {
     delete g_pp_preterm;
     delete g_pp_numerals;
+    delete g_pp_numeral_types;
+    delete g_pp_nat_numerals;
     delete g_pp_strings;
     delete g_pp_max_depth;
     delete g_pp_max_steps;
     delete g_pp_notation;
+    delete g_pp_parens;
     delete g_pp_implicit;
     delete g_pp_proofs;
     delete g_pp_coercions;
@@ -320,6 +347,7 @@ name const & get_pp_locals_full_names_name() { return *g_pp_locals_full_names; }
 name const & get_pp_beta_name() { return *g_pp_beta; }
 name const & get_pp_preterm_name() { return *g_pp_preterm; }
 name const & get_pp_numerals_name() { return *g_pp_numerals; }
+name const & get_pp_nat_numerals_name() { return *g_pp_nat_numerals; }
 name const & get_pp_strings_name() { return *g_pp_strings; }
 name const & get_pp_use_holes_name() { return *g_pp_use_holes; }
 name const & get_pp_binder_types_name() { return *g_pp_binder_types; }
@@ -328,6 +356,7 @@ name const & get_pp_generalized_field_notation_name() { return *g_pp_generalized
 unsigned get_pp_max_depth(options const & opts)         { return opts.get_unsigned(*g_pp_max_depth, LEAN_DEFAULT_PP_MAX_DEPTH); }
 unsigned get_pp_max_steps(options const & opts)         { return opts.get_unsigned(*g_pp_max_steps, LEAN_DEFAULT_PP_MAX_STEPS); }
 bool     get_pp_notation(options const & opts)          { return opts.get_bool(*g_pp_notation, LEAN_DEFAULT_PP_NOTATION); }
+bool     get_pp_parens(options const & opts)            { return opts.get_bool(*g_pp_parens, LEAN_DEFAULT_PP_PARENS); }
 bool     get_pp_implicit(options const & opts)          { return opts.get_bool(*g_pp_implicit, LEAN_DEFAULT_PP_IMPLICIT); }
 bool     get_pp_proofs(options const & opts)            { return opts.get_bool(*g_pp_proofs, LEAN_DEFAULT_PP_PROOFS); }
 bool     get_pp_coercions(options const & opts)         { return opts.get_bool(*g_pp_coercions, LEAN_DEFAULT_PP_COERCIONS); }
@@ -339,6 +368,8 @@ bool     get_pp_purify_locals(options const & opts)     { return opts.get_bool(*
 bool     get_pp_locals_full_names(options const & opts) { return opts.get_bool(*g_pp_locals_full_names, LEAN_DEFAULT_PP_LOCALS_FULL_NAMES); }
 bool     get_pp_beta(options const & opts)              { return opts.get_bool(*g_pp_beta, LEAN_DEFAULT_PP_BETA); }
 bool     get_pp_numerals(options const & opts)          { return opts.get_bool(*g_pp_numerals, LEAN_DEFAULT_PP_NUMERALS); }
+bool     get_pp_numeral_types(options const & opts)     { return opts.get_bool(*g_pp_numeral_types, LEAN_DEFAULT_PP_NUMERAL_TYPES); }
+bool     get_pp_nat_numerals(options const & opts)      { return opts.get_bool(*g_pp_nat_numerals, LEAN_DEFAULT_PP_NAT_NUMERALS); }
 bool     get_pp_strings(options const & opts)           { return opts.get_bool(*g_pp_strings, LEAN_DEFAULT_PP_STRINGS); }
 bool     get_pp_preterm(options const & opts)           { return opts.get_bool(*g_pp_preterm, LEAN_DEFAULT_PP_PRETERM); }
 bool     get_pp_goal_compact(options const & opts)      { return opts.get_bool(*g_pp_goal_compact, LEAN_DEFAULT_PP_GOAL_COMPACT); }

@@ -1,5 +1,155 @@
-3.33.0c (13 September 2021)
+3.42.0c (24 March 2022)
+-----------------------
+
+Features:
+- Export pretty-printed tactic states (#702)
+
+Bug fixes:
+- Make `async` aware of instance cache (#706)
+
+3.42.0c (18 March 2022)
+-----------------------
+
+Features:
+- `noncomputable!` to force noncomputability (#703)
+- Require non-Prop theorems to be noncomputable (#704)
+
+Bug fixes:
+- Do not use file name for private name generation (#699)
+- Use 64-bit hashes for file contents (#700)
+
+3.41.0c (11 March 2022)
+-----------------------
+
+Features:
+- Give `sorry` tactic ignored itactic block (#689)
+- Add `pp.numeral_types` option to display type ascriptions for numerals (#691)
+- Add `pp.numerals` option to control pretty printing of unary nats (#692)
+- Premise selection (#696)
+
+Bug fixes:
+- `rw`: move LHS metavar check (#690)
+- `noncomputable`: for constructors, only check arguments after inductive type's parameters (#693)
+- Give the heuristic instance name awareness of anonymous fields (#694)
+- `elim_match`: better error message (#697)
+
+3.40.0c (22 February 2022)
+-------------------------
+
+Bug fixes:
+- Strip spaces in heuristic name for notations (#687)
+- Don't skip remainder in `rw_hyp` (#686)
+
+3.39.2c (17 February 2022)
+--------------------------
+
+Bug fixes:
+- Regression in ast constant names export (#683)
+- `pp_tagged` output for have statements (#682)
+
+3.39.1c (8 February 2022)
+-------------------------
+
+Features:
+- Record comments in ast (#679)
+
+3.39.0c (3 February 2022)
+-------------------------
+
+Features:
+- Add option `pp.parens` to force parentheses for notation (#669)
+- `lstlean.tex`: `ϖ` and `ᵒ` (#671)
+- `pexpr` is inhabited too (#674)
+- `id_tag` for "tagging" tactic proofs (#670)
+- Export ast field info for `<local>.<field>` (#677)
+
+Bug fixes:
+- Add missing `parser_desc` combinators (#676)
+
+3.38.0c (11 January 2022)
+-------------------------
+
+Features:
+- Import unfreezing tactic from mathlib (#667)
+
+Changes:
+- Do not check for subsingleton in simp congrs (#665)
+
+Bug fixes:
+- Allow cloning tactic states with references (#666)
+
+3.37.0c (7 January 2021)
 ------------------------
+
+Features:
+- Improve `out_param` support in simp (#659)
+
+Bug fixes:
+- More robust check in cast removal in simp (#661)
+- Sort level parameters after collection (#662)
+- Use vm environment in `trace_widget` (#663)
+
+Changes:
+- Make type argument of default implicit (#660)
+
+3.36.0c (4 January 2021)
+------------------------
+
+Bug fixes:
+- Don't re-resolve calc constants (#652, fixes #651)
+- Unfold recursive arguments in inductives as semireducible (#653)
+- Use `always_assert` in `drec` construction (#654)
+- Don't block on metavariables that depend on an `out_param` (#657)
+
+Changes:
+- Use `}}` in format strings (#650)
+- Change binder collection order in `∀ (x y < n), true` (#656)
+
+3.35.1c (8 November 2021)
+-------------------------
+
+Features:
+- Support freebsd (#643)
+
+Bug fixes:
+- Check that arguments to `set_goals` are mvars (#642)
+- Turn comment into docstring (#646)
+- Use less memory in tlean export (#648)
+
+3.35.0c (28 October 2021)
+-------------------------
+
+Features:
+- Add `vm_decl.noncomputable_reason` (#638)
+
+Bug fixes:
+- Bugfix AST export (#634)
+
+Changes:
+- Adjust universe levels of coercions to match Lean 4 (#632)
+- Reorder sections in `data/nat/lemmas` (#635)
+- Remove `library/data/stream` (will be moved to mathlib) (#636)
+- Remove `library/data/rbtree` and `library/data/rbmap` (will be moved to mathlib) (#637)
+
+3.34.0c (20 October 2021)
+-------------------------
+
+Features:
+- Improve `by_contradiction` (#622)
+- Export tleans in parallel (#627)
+- Builds for Linux/aarch64 (#630)
+
+Bug fixes:
+- Fix `lift_list` (#626)
+
+Changes:
+- Drop `prod.has_lt` (#620)
+- Resolve `open` like `def` (#619)
+- `add_decl` adds parent namespaces (#618)
+- Backport `has_coe_to_sort`/`has_coe_to_fun` from Lean 4 (#557)
+
+3.33.0c (13 September 2021)
+---------------------------
 
 Features:
 - Allow sorry macro to textualize (#602)

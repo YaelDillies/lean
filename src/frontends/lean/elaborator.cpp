@@ -313,32 +313,8 @@ expr elaborator::mk_instance_core(expr const & C, expr const & ref) {
     return mk_instance_core(m_ctx.lctx(), C, ref);
 }
 
-/* We say a type class (Pi X, (C a_1 ... a_n)), where X may be empty, is
-   ready to synthesize if it does not contain metavariables,
-   or if the a_i's that contain metavariables are marked as output params. */
-bool elaborator::ready_to_synthesize(expr inst_type) {
-    if (!has_expr_metavar(inst_type))
-        return true;
-    while (is_pi(inst_type))
-        inst_type = binding_body(inst_type);
-    buffer<expr> C_args;
-    expr const & C = get_app_args(inst_type, C_args);
-    if (!is_constant(C))
-        return false;
-    expr it = m_ctx.infer(C);
-    for (expr const & C_arg : C_args) {
-        if (!is_pi(it))
-            return false; /* failed */
-        expr const & d = binding_domain(it);
-        if (has_expr_metavar(C_arg) && !is_class_out_param(d))
-            return false;
-        it = binding_body(it);
-    }
-    return true;
-}
-
 expr elaborator::mk_instance(expr const & C, expr const & ref) {
-    if (!ready_to_synthesize(C)) {
+    if (!m_ctx.ready_to_synthesize(C)) {
         expr inst = mk_metavar(C, ref);
         m_instances = cons(inst, m_instances);
         return inst;
@@ -769,9 +745,9 @@ optional<expr> elaborator::mk_coercion_to_fn_sort(bool is_fn, expr const & e, ex
     if (!m_coercions) return none_expr();
     expr e_type = instantiate_mvars(_e_type);
     try {
-        bool mask[3] = { true, false, true };
+        bool mask[4] = { true, false, false, true };
         expr args[2] = { e_type, e };
-        expr new_e = mk_app(m_ctx, is_fn ? get_coe_fn_name() : get_coe_sort_name(), 3, mask, args);
+        expr new_e = mk_app(m_ctx, is_fn ? get_coe_fn_name() : get_coe_sort_name(), 4, mask, args);
         expr new_e_type = whnf(infer_type(new_e));
         if ((is_fn && is_pi(new_e_type)) || (!is_fn && is_sort(new_e_type))) {
             return some_expr(new_e);
@@ -2066,6 +2042,10 @@ expr elaborator::visit_anonymous_constructor(expr const & e, optional<expr> cons
     expr const & c = get_app_args(get_anonymous_constructor_arg(e), args);
     if (!expected_type)
         throw elaborator_exception(e, "invalid constructor ⟨...⟩, expected type must be known");
+    // The expected type may be a coercion, and
+    // we need to synthesize type class instances
+    // to figure what inductive type it is.
+    synthesize();
     expr I = get_app_fn(m_ctx.relaxed_whnf(instantiate_mvars(*expected_type)));
     if (!is_constant(I))
         throw elaborator_exception(e, format("invalid constructor ⟨...⟩, expected type is not an inductive type") +
@@ -3590,7 +3570,7 @@ void elaborator::synthesize_numeral_types() {
 }
 
 bool elaborator::synthesize_type_class_instance_core(expr const & mvar, expr const & inferred_inst, expr const & inst_type) {
-    if (!ready_to_synthesize(inst_type))
+    if (!m_ctx.ready_to_synthesize(inst_type))
         return false;
     metavar_decl mdecl = m_ctx.mctx().get_metavar_decl(mvar);
     expr ref = mvar;
@@ -3619,7 +3599,7 @@ void elaborator::synthesize_type_class_instances_step() {
     for (expr const & mvar : m_instances) {
         expr inst      = instantiate_mvars(mvar);
         expr inst_type = instantiate_mvars(infer_type(inst));
-        if (!ready_to_synthesize(inst_type)) {
+        if (!m_ctx.ready_to_synthesize(inst_type)) {
             to_keep.push_back(mvar);
         } else {
             to_process.emplace_back(mvar, inst, inst_type);

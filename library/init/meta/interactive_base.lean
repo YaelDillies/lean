@@ -49,6 +49,9 @@ do hs ← l.get_locals,
 /-- Use `desc` as the interactive description of `p`. -/
 meta def with_desc {α : Type} (desc : format) (p : parser α) : parser α := p
 
+meta instance with_desc.reflectable {α : Type} (p : parser α) [h : lean.parser.reflectable p]
+  (f : format) : reflectable (with_desc f p) := h
+
 namespace types
 variables {α β : Type}
 
@@ -110,6 +113,7 @@ private meta def parser_desc_aux : expr → tactic (list format)
 | `(pure ._) := return []
 | `(._ <$> %%p) := parser_desc_aux p
 | `(skip_info %%p) := parser_desc_aux p
+| `(._ <$ %%p) := parser_desc_aux p
 | `(set_goal_info_pos %%p) := parser_desc_aux p
 | `(with_desc %%desc %%p) := list.ret <$> eval_expr format desc
 | `(%%p₁ <*> %%p₂) := do
@@ -121,6 +125,10 @@ private meta def parser_desc_aux : expr → tactic (list format)
   f₂ ← parser_desc_aux p₂,
   return $ concat f₁ f₂
 | `(%%p₁ *> %%p₂) := do
+  f₁ ← parser_desc_aux p₁,
+  f₂ ← parser_desc_aux p₂,
+  return $ concat f₁ f₂
+| `(%%p₁ >> %%p₂) := do
   f₁ ← parser_desc_aux p₁,
   f₂ ← parser_desc_aux p₂,
   return $ concat f₁ f₂
@@ -169,12 +177,15 @@ meta constant decl_attributes : Type
 
 meta constant decl_attributes.apply : decl_attributes → name → parser unit
 
+meta inductive noncomputable_modifier
+| computable | «noncomputable» | force_noncomputable
+
 meta structure decl_modifiers :=
 (is_private       : bool)
 (is_protected     : bool)
 (is_meta          : bool)
 (is_mutual        : bool)
-(is_noncomputable : bool)
+(is_noncomputable : noncomputable_modifier)
 
 meta structure decl_meta_info :=
 (attrs      : decl_attributes)
@@ -205,8 +216,8 @@ open interaction_monad
 open interactive
 
 private meta def parse_format : string → list char → parser pexpr
-| acc []            := pure ``(to_fmt %%(reflect acc))
-| acc ('\n'::s)     :=
+| acc [] := pure ``(to_fmt %%(reflect acc))
+| acc ('\n'::s) :=
 do f ← parse_format "" s,
    pure ``(to_fmt %%(reflect acc) ++ format.line ++ %%f)
 | acc ('{'::'{'::s) := parse_format (acc ++ "{") s
@@ -215,6 +226,8 @@ do (e, s) ← with_input (lean.parser.pexpr 0) s.as_string,
    '}'::s ← return s.to_list | fail "'}' expected",
    f ← parse_format "" s,
    pure ``(to_fmt %%(reflect acc) ++ to_fmt %%e ++ %%f)
+| acc ('}'::'}'::s) := parse_format (acc ++ "}") s
+| acc ('}'::s) := fail "'}}' expected"
 | acc (c::s) := parse_format (acc.str c) s
 
 reserve prefix `format! `:100
@@ -223,13 +236,15 @@ meta def format_macro (_ : parse $ tk "format!") (s : string) : parser pexpr :=
 parse_format "" s.to_list
 
 private meta def parse_sformat : string → list char → parser pexpr
-| acc []            := pure $ pexpr.of_expr (reflect acc)
+| acc [] := pure $ pexpr.of_expr (reflect acc)
 | acc ('{'::'{'::s) := parse_sformat (acc ++ "{") s
 | acc ('{'::s) :=
 do (e, s) ← with_input (lean.parser.pexpr 0) s.as_string,
    '}'::s ← return s.to_list | fail "'}' expected",
    f ← parse_sformat "" s,
    pure ``(%%(reflect acc) ++ to_string %%e ++ %%f)
+| acc ('}'::'}'::s) := parse_sformat (acc ++ "}") s
+| acc ('}'::s) := fail "'}}' expected"
 | acc (c::s) := parse_sformat (acc.str c) s
 
 reserve prefix `sformat! `:100

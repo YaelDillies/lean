@@ -343,7 +343,8 @@ pair<local_context, expr> type_context_old::revert_core(buffer<expr> & to_revert
         for (expr const & h : to_revert) {
             for (local_instance const & li : *lis) {
                 if (mlocal_name(h) == mlocal_name(li.get_local())) {
-                    throw exception(sstream() << "failed to revert '" << h << "', it is a frozen local instance (possible solution: use tactic `tactic.unfreeze_local_instances` to reset the set of local instances)");
+                    throw exception(sstream() << "failed to revert '" << h
+                        << "', it is a frozen local instance (possible solution: use tactic `unfreezing` to temporarily reset the set of local instances)");
                 }
             }
         }
@@ -3985,15 +3986,6 @@ struct instance_synthesizer {
     }
 };
 
-static bool depends_on_mvar(expr const & e, buffer<expr> const & mvars) {
-    // TODO(Leo): improve performance if needed
-    for (expr const & mvar : mvars) {
-        if (occurs(mvar, e))
-            return true;
-    }
-    return false;
-}
-
 /*
 Type class parameters can be annotated with out_param annotations.
 
@@ -4011,6 +4003,7 @@ OR
    If we reject this kind of declaration, then we don't need
    this extra case which may artificially treat regular parameters
    as `out` (**).
+These two cases are detected by `type_context_old::class_out_param_deps`.
 
 Then, we execute type class resolution as usual.
 If it succeeds, and metavariables ?x_i have been assigned, we solve the unification
@@ -4097,15 +4090,16 @@ expr type_context_old::preprocess_class(expr const & type,
     if (!u_replacements.empty())
         C = update_constant(C, to_list(C_levels));
     expr it2 = infer(C);
+    buffer<bool> is_out_param;
+    class_out_param_deps(it2, is_out_param);
+    unsigned i = 0;
     for (expr & C_arg : C_args) {
         it2  = whnf(it2);
         if (!is_pi(it2))
             return type; /* failed */
         expr const & d = binding_domain(it2);
-        if (/* Case 1 */
-            is_class_out_param(d) ||
-            /* Case 2 */
-            depends_on_mvar(d, new_mvars)) {
+
+        if (i < is_out_param.size() && is_out_param[i]) {
             expr new_mvar = mk_tmp_mvar(locals.mk_pi(d));
             new_mvars.push_back(new_mvar);
             expr new_arg  = mk_app(new_mvar, locals.as_buffer());
@@ -4113,6 +4107,7 @@ expr type_context_old::preprocess_class(expr const & type,
             C_arg = new_arg;
         }
         it2 = instantiate(binding_body(it2), C_arg);
+        i++;
     }
     expr new_class = mk_app(C, C_args);
     return locals.mk_pi(new_class);
@@ -4171,6 +4166,34 @@ optional<expr> type_context_old::mk_class_instance(expr const & type_0) {
         S.commit();
     }
     return result;
+}
+
+/* We say a type class (Pi X, (C a_1 ... a_n)), where X may be empty, is
+   ready to synthesize if it does not contain metavariables,
+   or if the a_i's that contain metavariables are marked as output params. */
+bool type_context_old::ready_to_synthesize(expr inst_type) {
+    if (!has_expr_metavar(inst_type))
+        return true;
+    while (is_pi(inst_type))
+        inst_type = binding_body(inst_type);
+    buffer<expr> C_args;
+    expr const & C = get_app_args(inst_type, C_args);
+    if (!is_constant(C))
+        return false;
+    expr it = infer(C);
+    buffer<bool> is_out_param;
+    class_out_param_deps(it, is_out_param);
+    int i = 0;
+    for (expr const & C_arg : C_args) {
+        if (!is_pi(it))
+            return false; /* failed */
+        if (has_expr_metavar(C_arg) && !is_out_param[i])
+            return false;
+
+        it = binding_body(it);
+        i++;
+    }
+    return true;
 }
 
 optional<expr> type_context_old::mk_subsingleton_instance(expr const & type) {
@@ -4266,6 +4289,11 @@ void tmp_type_context::clear_eassignment() {
 expr tmp_type_context::instantiate_mvars(expr const & e) {
     type_context_old::tmp_mode_scope_with_data tmp_scope(m_ctx, m_tmp_data);
     return m_ctx.instantiate_mvars(e);
+}
+
+optional<expr> tmp_type_context::mk_class_instance(expr const & cls_type) {
+    type_context_old::tmp_mode_scope_with_data tmp_scope(m_ctx, m_tmp_data);
+    return m_ctx.mk_class_instance(cls_type);
 }
 
 void tmp_type_context::assign(expr const & m, expr const & v) {

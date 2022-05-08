@@ -40,6 +40,9 @@ bool has_open_scopes(environment const & env);
 /** \brief Add a new namespace (if it does not exist) */
 environment add_namespace(environment const & env, name const & ns);
 
+/** \brief Add all parents of a given name as new namespaces */
+environment add_parent_namespaces(environment const & env, name const & full_n);
+
 name const & get_namespace(environment const & env);
 name const & get_scope_header(environment const & env);
 /** \brief Return the current stack of namespaces.
@@ -52,16 +55,6 @@ name const & get_scope_header(environment const & env);
     \remark This is *not* the set of opened namespaces. */
 list<name> const & get_namespaces(environment const & env);
 bool in_section(environment const & env);
-
-/** \brief Check if \c n may be a reference to a namespace, if it is return it.
-    The procedure checks if \c n is a registered namespace, if it is not, it tries
-    to prefix \c n with each prefix in the current scope. Example: suppose the scope is:
-       namespace foo
-         namespace bla
-           namespace boo
-              ...
-    Then, the procedure tries n, 'foo.bla.boo'+n, 'foo.bla'+n, 'foo'+n. */
-optional<name> to_valid_namespace_name(environment const & env, name const & n);
 
 std::vector<name> get_namespace_completion_candidates(environment const & env);
 

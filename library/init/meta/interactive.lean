@@ -83,7 +83,7 @@ in match q with
 end
 
 namespace interactive
-open interactive interactive.types expr
+open _root_.interactive interactive.types expr
 
 /--
 itactic: parse a nested "interactive" tactic. That is, parse
@@ -367,7 +367,8 @@ private meta def rw_hyp (cfg : rewrite_cfg) : list rw_rule → expr → tactic u
   save_info r.pos,
   eq_lemmas ← get_rule_eqn_lemmas r,
   orelse'
-    (do e ← to_expr' r.rule, when (not (uses_hyp e hyp)) $ rewrite_hyp e hyp {symm := r.symm, ..cfg} >>= rw_hyp rs)
+    (do e ← to_expr' r.rule,
+      (if uses_hyp e hyp then pure e else rewrite_hyp e hyp {symm := r.symm, ..cfg}) >>= rw_hyp rs)
     (eq_lemmas.mfirst $ λ n, do e ← mk_const n, rewrite_hyp e hyp {symm := r.symm, ..cfg} >>= rw_hyp rs)
     (eq_lemmas.empty)
 
@@ -853,14 +854,32 @@ meta def trivial : tactic unit :=
 tactic.triv <|> tactic.reflexivity <|> tactic.contradiction <|> fail "trivial tactic failed"
 
 /--
-Closes the main goal using `sorry`.
+Closes the main goal using `sorry`. Takes an optional ignored tactic block.
+
+The ignored tactic block is useful for "commenting out" part of a proof during development:
+```lean
+begin
+  split,
+  admit { expensive_tactic },
+
+end
+```
 -/
-meta def admit : tactic unit := tactic.admit
+meta def admit (t : parse (with_desc "{...}" parser.itactic)?) : tactic unit := tactic.admit
 
 /--
-Closes the main goal using `sorry`.
+Closes the main goal using `sorry`. Takes an optional ignored tactic block.
+
+The ignored tactic block is useful for "commenting out" part of a proof during development:
+```lean
+begin
+  split,
+  sorry { expensive_tactic },
+
+end
+```
 -/
-meta def «sorry» : tactic unit := tactic.admit
+meta def «sorry» (t : parse (with_desc "{...}" parser.itactic)?) : tactic unit := tactic.admit
 
 /--
 The contradiction tactic attempts to find in the current local context a hypothesis that is equivalent to an empty inductive type (e.g. `false`), a hypothesis of the form `c_1 ... = c_2 ...` where `c_1` and `c_2` are distinct constructors, or two contradictory hypotheses.
@@ -1196,6 +1215,8 @@ do
   let e := p.erase_annotations.get_app_fn.erase_annotations,
   match e with
   | const n _           :=
+    (do guard (¬ symm), has_attribute `congr n, s ← s.add_congr n, pure (s, u))
+    <|>
     (do b ← is_valid_simp_lemma_cnst n, guard b, save_const_type_info n ref, s ← s.add_simp n symm, return (s, u))
     <|>
     (do eqns ← get_eqn_lemmas_for tt n,
@@ -1257,7 +1278,7 @@ prod.snd <$> (mk_simp_set_core no_dflt attr_names hs ff)
 end mk_simp_set
 
 namespace interactive
-open interactive interactive.types expr
+open _root_.interactive interactive.types expr
 
 meta def simp_core_aux (cfg : simp_config) (discharger : tactic unit) (s : simp_lemmas) (u : list name) (hs : list expr) (tgt : bool) : tactic name_set :=
 do (to_remove, lmss) ← @list.mfoldl tactic _ (list expr × name_set) _ (λ ⟨hs, lms⟩ h,
@@ -1515,7 +1536,7 @@ structure unfold_config extends simp_config :=
 (constructor_eq     := ff)
 
 namespace interactive
-open interactive interactive.types expr
+open _root_.interactive interactive.types expr
 
 /--
 Given defined constants `e₁ ... eₙ`, `unfold e₁ ... eₙ` iteratively unfolds all occurrences in the target of the main goal, using equational lemmas associated with the definitions.

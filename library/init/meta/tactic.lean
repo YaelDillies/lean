@@ -119,7 +119,7 @@ meta def executor.execute_with_explicit (m : Type → Type u)
 executor.execute_with
 
 /-- Default `executor` instance for `tactic`s themselves -/
-meta instance : executor tactic :=
+meta instance executor_tactic : executor tactic :=
 { config_type := unit,
   inhabited := ⟨()⟩,
   execute_with := λ _, id }
@@ -516,7 +516,7 @@ meta constant mk_eq_trans   : expr → expr → tactic expr
 meta constant mk_eq_mp      : expr → expr → tactic expr
 /-- (mk_eq_mpr h₁ h₂) is a more efficient version of (mk_app `eq.mpr [h₁, h₂]) -/
 meta constant mk_eq_mpr      : expr → expr → tactic expr
-/- Given a local constant t, if t has type (lhs = rhs) apply substitution.
+/-- Given a local constant t, if t has type (lhs = rhs) apply substitution.
    Otherwise, try to find a local constant that has type of the form (t = t') or (t' = t).
    The tactic fails if the given expression is not a local constant. -/
 meta constant subst_core     : expr → tactic unit
@@ -551,6 +551,10 @@ meta constant rotate_left   : nat → tactic unit
 meta constant get_goals     : tactic (list expr)
 /-- Replace the current list of goals with the given one. Each expr in the list should be a metavariable. Any assigned metavariables will be ignored.-/
 meta constant set_goals     : list expr → tactic unit
+/-- Convenience function for creating ` for proofs. -/
+meta def mk_tagged_proof (prop : expr) (pr : expr) (tag : name) : expr :=
+expr.mk_app (expr.const ``id_tag []) [expr.const tag [], prop, pr]
+
 /-- How to order the new goals made from an `apply` tactic.
 Supposing we were applying `e : ∀ (a:α) (p : P(a)), Q`
 - `non_dep_first` would produce goals `⊢ P(?m)`, `⊢ α`. It puts the P goal at the front because none of the arguments after `p` in `e` depend on `p`. It doesn't matter what the result `Q` depends on.
@@ -757,7 +761,7 @@ meta constant set_tag (g : expr) (t : tag) : tactic unit
 /-- Return tag associated with `g`. Return `[]` if there is no tag. -/
 meta constant get_tag (g : expr) : tactic tag
 
-/-- By default, Lean only considers local instances in the header of declarations.
+/-! By default, Lean only considers local instances in the header of declarations.
     This has two main benefits.
     1- Results produced by the type class resolution procedure can be easily cached.
     2- The set of local instances does not have to be recomputed.
@@ -766,11 +770,14 @@ meta constant get_tag (g : expr) : tactic tag
     1- Frozen local instances cannot be reverted.
     2- Local instances defined inside of a declaration are not considered during type
        class resolution.
+-/
 
-    This tactic resets the set of local instances. After executing this tactic,
-    the set of local instances will be recomputed and the cache will be frequently
-    reset. Note that, the cache is still used when executing a single tactic that
-    may generate many type class resolution problems (e.g., `simp`). -/
+/--
+Avoid this function!  Use `unfreezingI`/`resetI`/etc. instead!
+
+Unfreezes the current set of local instances.
+After this tactic, the instance cache is disabled.
+-/
 meta constant unfreeze_local_instances : tactic unit
 /--
 Freeze the current set of local instances.
@@ -957,8 +964,8 @@ revert_lst [l]
 
 /- Revert "all" hypotheses. Actually, the tactic only reverts
    hypotheses occurring after the last frozen local instance.
-   Recall that frozen local instances cannot be reverted.
-   We can use `unfreeze_local_instances` to workaround this limitation. -/
+   Recall that frozen local instances cannot be reverted,
+   use `unfreezing revert_all` instead. -/
 meta def revert_all : tactic nat :=
 do lctx ← local_context,
    lis  ← frozen_local_instances,
@@ -1741,7 +1748,7 @@ are the new names.
 
 This tactic can only rename hypotheses which occur after the last frozen local
 instance. If you need to rename earlier hypotheses, try
-`unfreeze_local_instances`.
+`unfreezing (rename_many ...)`.
 
 If `strict` is true, we fail if `name_map` refers to hypotheses that do not
 appear in the local context or that appear before a frozen local instance.
@@ -1774,7 +1781,7 @@ do let hyp_name : expr → name :=
        , format.line
        , "This is because these hypotheses either do not occur in the\n"
        , "context or they occur before a frozen local instance.\n"
-       , "In the latter case, try `tactic.unfreeze_local_instances`."
+       , "In the latter case, try `unfreezingI { ... }`."
        ]
    },
    -- The new names for all hypotheses in ctx_suffix.
@@ -1809,9 +1816,11 @@ that (type = new_type). The tactic actually creates a new hypothesis
 with the same user facing name, and (tries to) clear `h`.
 The `clear` step fails if `h` has forward dependencies. In this case, the old `h`
 will remain in the local context. The tactic returns the new hypothesis. -/
-meta def replace_hyp (h : expr) (new_type : expr) (eq_pr : expr) : tactic expr :=
+meta def replace_hyp (h : expr) (new_type : expr) (eq_pr : expr) (tag : name := `unit.star) : tactic expr :=
 do h_type ← infer_type h,
    new_h ← assert h.local_pp_name new_type,
+   eq_pr_type ← mk_app `eq [h_type, new_type],
+   let eq_pr := mk_tagged_proof eq_pr_type eq_pr tag,
    mk_eq_mp eq_pr h >>= exact,
    try $ clear h,
    return new_h
@@ -1878,18 +1887,13 @@ meta instance : monad task :=
 {map := @task.map, bind := @task.bind, pure := @task.pure}
 
 namespace tactic
-meta def mk_id_proof (prop : expr) (pr : expr) : expr :=
-expr.app (expr.app (expr.const ``id [level.zero]) prop) pr
 
-meta def mk_id_eq (lhs : expr) (rhs : expr) (pr : expr) : tactic expr :=
-do prop ← mk_app `eq [lhs, rhs],
-   return $ mk_id_proof prop pr
-
-meta def replace_target (new_target : expr) (pr : expr) : tactic unit :=
+meta def replace_target (new_target : expr) (pr : expr) (tag : name := `unit.star) : tactic unit :=
 do t ← target,
    assert `htarget new_target, swap,
    ht        ← get_local `htarget,
-   locked_pr ← mk_id_eq t new_target pr,
+   pr_type   ← mk_app `eq [t, new_target],
+   let locked_pr := mk_tagged_proof pr_type pr tag,
    mk_eq_mpr locked_pr ht >>= exact
 
 meta def eval_pexpr (α) [reflected α] (e : pexpr) : tactic α :=

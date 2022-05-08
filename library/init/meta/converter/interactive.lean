@@ -29,7 +29,7 @@ tactic.solve1 $ c >> tactic.try (tactic.any_goals tactic.reflexivity)
 namespace interactive
 open lean
 open lean.parser
-open interactive
+open _root_.interactive
 open interactive.types
 open tactic_result
 
@@ -179,7 +179,7 @@ namespace tactic
 namespace interactive
 open lean
 open lean.parser
-open interactive
+open _root_.interactive
 open interactive.types
 open tactic
 local postfix `?`:9001 := optional
@@ -188,13 +188,13 @@ private meta def conv_at (h_name : name) (c : conv unit) : tactic unit :=
 do h ← get_local h_name,
    h_type ← infer_type h,
    (new_h_type, pr) ← c.convert h_type,
-   replace_hyp h new_h_type pr,
+   replace_hyp h new_h_type pr ``id_tag.conv,
    return ()
 
 private meta def conv_target (c : conv unit) : tactic unit :=
 do t ← target,
    (new_t, pr) ← c.convert t,
-   replace_target new_t pr,
+   replace_target new_t pr ``id_tag.conv,
    try tactic.triv, try (tactic.reflexivity reducible)
 
 meta def conv (loc : parse (tk "at" *> ident)?)

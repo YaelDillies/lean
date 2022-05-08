@@ -74,18 +74,6 @@ bool is_namespace(environment const & env, name const & n) {
     return get_extension(env).m_namespace_set.contains(n);
 }
 
-optional<name> to_valid_namespace_name(environment const & env, name const & n) {
-    scope_mng_ext const & ext = get_extension(env);
-    if (ext.m_namespace_set.contains(n))
-        return optional<name>(n);
-    for (auto const & ns : ext.m_namespaces) {
-        name r = ns + n;
-        if (ext.m_namespace_set.contains(r))
-            return optional<name>(r);
-    }
-    return optional<name>();
-}
-
 std::vector<name> get_namespace_completion_candidates(environment const & env) {
     std::vector<name> ret;
     scope_mng_ext const & ext = get_extension(env);
@@ -141,6 +129,12 @@ environment add_namespace(environment const & env, name const & ns) {
     } else {
         return env;
     }
+}
+
+environment add_parent_namespaces(environment const & env, name const & full_n) {
+    if (full_n.is_anonymous() || full_n.is_atomic())
+        return env;
+    return add_namespace(env, full_n.get_prefix());
 }
 
 environment push_scope(environment const & env, io_state const & ios, scope_kind k, name const & n) {

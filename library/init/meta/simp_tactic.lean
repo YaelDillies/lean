@@ -10,6 +10,8 @@ import init.data.option.basic
 
 open tactic
 
+def tactic.id_tag.simp : unit := ()
+
 def simp.default_max_steps := 10000000
 
 /-- Prefix the given `attr_name` with `"simp_attr"`. -/
@@ -32,6 +34,8 @@ meta constant simp_lemmas.mk : simp_lemmas
 meta constant simp_lemmas.join : simp_lemmas → simp_lemmas → simp_lemmas
 /-- Remove the given lemmas from the table. Use the names of the lemmas. -/
 meta constant simp_lemmas.erase : simp_lemmas → list name → simp_lemmas
+/-- Remove all simp lemmas from the table. -/
+meta constant simp_lemmas.erase_simp_lemmas : simp_lemmas → simp_lemmas
 /-- Makes the default simp_lemmas table which is composed of all lemmas tagged with `simp`. -/
 meta constant simp_lemmas.mk_default : tactic simp_lemmas
 /-- Add a simplification lemma by an expression `p`. Some conditions on `p` must hold for it to be added, see list below.
@@ -292,14 +296,14 @@ meta constant simplify (s : simp_lemmas) (to_unfold : list name := []) (e : expr
 meta def simp_target (s : simp_lemmas) (to_unfold : list name := []) (cfg : simp_config := {}) (discharger : tactic unit := failed) : tactic name_set :=
 do t ← target >>= instantiate_mvars,
    (new_t, pr, lms) ← simplify s to_unfold t cfg `eq discharger,
-   replace_target new_t pr,
+   replace_target new_t pr ``id_tag.simp,
    return lms
 
 meta def simp_hyp (s : simp_lemmas) (to_unfold : list name := []) (h : expr) (cfg : simp_config := {}) (discharger : tactic unit := failed) : tactic (expr × name_set) :=
 do when (expr.is_local_constant h = ff) (fail "tactic simp_at failed, the given expression is not a hypothesis"),
    htype ← infer_type h,
    (h_new_type, pr, lms) ← simplify s to_unfold htype cfg `eq discharger,
-   new_hyp ← replace_hyp h h_new_type pr,
+   new_hyp ← replace_hyp h h_new_type pr ``id_tag.simp,
    return (new_hyp, lms)
 
 /--
@@ -415,7 +419,7 @@ do (lhs, rhs)     ← target >>= match_eq,
 
 meta def to_simp_lemmas : simp_lemmas → list name → tactic simp_lemmas
 | S []      := return S
-| S (n::ns) := do S' ← S.add_simp n ff, to_simp_lemmas S' ns
+| S (n::ns) := do S' ← (has_attribute `congr n >> S.add_congr n) <|> S.add_simp n ff, to_simp_lemmas S' ns
 
 meta def mk_simp_attr (attr_name : name) (attr_deps : list name := []) : command :=
 do let t := `(user_attribute simp_lemmas),
@@ -456,11 +460,9 @@ meta def join_user_simp_lemmas_core : simp_lemmas → list name → tactic simp_
 | S (attr_name::R) := do S' ← get_user_simp_lemmas attr_name, join_user_simp_lemmas_core (S.join S') R
 
 meta def join_user_simp_lemmas (no_dflt : bool) (attrs : list name) : tactic simp_lemmas :=
-if no_dflt then
-  join_user_simp_lemmas_core simp_lemmas.mk attrs
-else do
-  s ← simp_lemmas.mk_default,
-  join_user_simp_lemmas_core s attrs
+do s ← simp_lemmas.mk_default,
+   let s := if no_dflt then s.erase_simp_lemmas else s,
+   join_user_simp_lemmas_core s attrs
 
 meta def simplify_top_down {α} (a : α) (pre : α → expr → tactic (α × expr × expr)) (e : expr) (cfg : simp_config := {}) : tactic (α × expr × expr) :=
 ext_simplify_core a cfg simp_lemmas.mk (λ _, failed)
@@ -471,7 +473,7 @@ ext_simplify_core a cfg simp_lemmas.mk (λ _, failed)
 meta def simp_top_down (pre : expr → tactic (expr × expr)) (cfg : simp_config := {}) : tactic unit :=
 do t                   ← target,
    (_, new_target, pr) ← simplify_top_down () (λ _ e, do (new_e, pr) ← pre e, return ((), new_e, pr)) t cfg,
-   replace_target new_target pr
+   replace_target new_target pr ``id_tag.simp
 
 meta def simplify_bottom_up {α} (a : α) (post : α → expr → tactic (α × expr × expr)) (e : expr) (cfg : simp_config := {}) : tactic (α × expr × expr) :=
 ext_simplify_core a cfg simp_lemmas.mk (λ _, failed)
@@ -482,7 +484,7 @@ ext_simplify_core a cfg simp_lemmas.mk (λ _, failed)
 meta def simp_bottom_up (post : expr → tactic (expr × expr)) (cfg : simp_config := {}) : tactic unit :=
 do t                   ← target,
    (_, new_target, pr) ← simplify_bottom_up () (λ _ e, do (new_e, pr) ← post e, return ((), new_e, pr)) t cfg,
-   replace_target new_target pr
+   replace_target new_target pr ``id_tag.simp
 
 private meta def remove_deps (s : name_set) (h : expr) : name_set :=
 if s.empty then s
@@ -572,7 +574,7 @@ private meta def loop (cfg : simp_config) (discharger : tactic unit) (to_unfold 
        return (mk_name_set)
      else do
        h0_type     ← infer_type h,
-       let new_fact_pr := mk_id_proof new_h_type new_fact_pr,
+       let new_fact_pr := mk_tagged_proof new_h_type new_fact_pr ``id_tag.simp,
        new_es      ← update_simp_lemmas es new_fact_pr,
        new_r       ← update_simp_lemmas r new_fact_pr,
        let new_r := {new_type := new_h_type, pr := new_pr, ..e} :: new_r,

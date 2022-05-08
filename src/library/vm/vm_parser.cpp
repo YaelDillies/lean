@@ -37,7 +37,9 @@ struct lean_parser_state {
     parser * m_p;
 };
 
-bool is_ts_safe(lean_parser_state const &) { return false; }
+lean_parser_state ts_clone_impl(vm_clone_fn const &, lean_parser_state const &) {
+    throw exception("vm_parser objects cannot be copied to another thread");
+}
 template struct interaction_monad<lean_parser_state>;
 typedef interaction_monad<lean_parser_state> lean_parser;
 
@@ -108,7 +110,7 @@ static vm_obj to_obj(decl_modifiers const & mods) {
             mk_vm_bool(mods.m_is_protected),
             mk_vm_bool(mods.m_is_meta),
             mk_vm_bool(mods.m_is_mutual),
-            mk_vm_bool(mods.m_is_noncomputable),
+            mk_vm_simple(static_cast<unsigned>(mods.m_noncomputable)),
     });
 }
 
@@ -135,9 +137,7 @@ decl_modifiers to_decl_modifiers(vm_obj const & o) {
     if (to_bool(cfield(o, 3))) {
         mods.m_is_mutual = true;
     }
-    if (to_bool(cfield(o, 4))) {
-        mods.m_is_noncomputable = true;
-    }
+    mods.m_noncomputable = static_cast<noncomputable_modifier>(cidx(cfield(o, 4)));
     return mods;
 }
 
