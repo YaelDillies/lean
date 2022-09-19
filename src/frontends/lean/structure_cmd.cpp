@@ -127,7 +127,7 @@ bool is_structure(environment const & env, name const & S) {
         intro_type = binding_body(intro_type);
     }
     if (!is_pi(intro_type))
-        return false;
+        return true;  // no fields
     name field_name = S + deinternalize_field_name(binding_name(intro_type));
     return get_projection_info(env, field_name) != nullptr;
 }
@@ -175,6 +175,31 @@ optional<name> find_field(environment const & env, name const & S_name, name con
             return n;
     }
     return {};
+}
+
+optional<pair<name, name>> find_method(environment const & env, name const & struct_name, name const & field_name) {
+    if (env.find(struct_name + field_name))
+        return some(mk_pair(struct_name, struct_name + field_name));
+    if (is_structure_like(env, struct_name)) {
+        for (auto const & p : get_parent_structures(env, struct_name)) {
+            if (auto m = find_method(env, p, field_name))
+                return m;
+        }
+    }
+    return {};
+}
+
+optional<pair<name, name>> find_method_alias(environment const & env, name const & struct_name, name const & field_name) {
+    optional<pair<name, name>> res = {};
+    for (auto const & alias : get_expr_aliases(env, struct_name + field_name)) {
+        if (alias.drop_prefix() == field_name) {
+            if (res) {
+                return {};
+            }
+            res = some(mk_pair(alias.get_prefix(), alias));
+        }
+    }
+    return res;
 }
 
 void get_structure_fields_flattened(environment const & env, name const & structure_name, buffer<name> & full_fnames) {

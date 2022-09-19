@@ -62,7 +62,7 @@ notation_entry::notation_entry(bool is_nud, list<transition> const & ts, expr co
     m_name(n), m_expr(e), m_overload(overload), m_group(g), m_parse_only(parse_only), m_priority(priority) {
     new (&m_transitions) list<transition>(ts);
     m_safe_ascii = std::all_of(ts.begin(), ts.end(), [](transition const & t) { return t.is_safe_ascii(); });
-    if (n.is_anonymous()) m_name = heuristic_name();
+    if (g == notation_entry_group::Main && n.is_anonymous()) m_name = heuristic_name();
 }
 notation_entry::notation_entry(notation_entry const & e, bool overload):
     notation_entry(e) {
@@ -264,9 +264,11 @@ struct notation_prio_fn { unsigned operator()(notation_entry const & v) const { 
 struct notation_state {
     typedef rb_map<mpz, list<expr>, mpz_cmp_fn> num_map;
     typedef head_map_prio<notation_entry, notation_prio_fn> head_to_entries;
+    typedef name_map<std::shared_ptr<notation_entry>> notation_names;
     parse_table      m_nud;
     parse_table      m_led;
     num_map          m_num_map;
+    notation_names   m_notation_names;
     head_to_entries  m_inv_map;
     // The following two tables are used to implement `reserve notation` commands
     parse_table      m_reserved_nud;
@@ -306,6 +308,12 @@ struct notation_config {
     }
 
     static void add_entry(environment const &, io_state const &, state & s, entry const & e) {
+        if (e.group() == notation_entry_group::Main) {
+            if (auto other = s.m_notation_names.find(e.get_name()))
+                if (e != **other)
+                    throw exception(sstream() << "invalid notation, a notation named '" << e.get_name() << "' has already been declared");
+            s.m_notation_names.insert(e.get_name(), std::make_shared<entry>(e));
+        }
         buffer<transition> ts;
         switch (e.kind()) {
         case notation_entry_kind::NuD: {
@@ -342,8 +350,8 @@ struct notation_config {
     }
     static char const * get_serialization_key() { return "NOTA"; }
 
-    static void  write_entry(serializer & s, entry const & e) {
-        s << static_cast<char>(e.kind()) << e.overload() << e.parse_only() << e.get_expr();
+    static void write_entry(serializer & s, entry const & e) {
+        s << static_cast<char>(e.kind()) << e.get_name() << e.overload() << e.parse_only() << e.get_expr();
         if (e.is_numeral()) {
             s << e.get_num();
         } else {
@@ -354,7 +362,7 @@ struct notation_config {
         }
     }
 
-    static void  textualize_entry(tlean_exporter & x, entry const & e) {
+    static void textualize_entry(tlean_exporter & x, entry const & e) {
         // Note: we do not export all notations, only simple ones
         // (e.g. prefix, postfix, infix)
         if (e.parse_only()) return;
@@ -400,12 +408,12 @@ struct notation_config {
 
     static entry read_entry(deserializer & d) {
         notation_entry_kind k = static_cast<notation_entry_kind>(d.read_char());
-        bool overload, parse_only; expr e;
-        d >> overload >> parse_only >> e;
+        name n; bool overload, parse_only; expr e;
+        d >> n >> overload >> parse_only >> e;
         if (k == notation_entry_kind::Numeral) {
             mpz val;
             d >> val;
-            return entry(val, e, overload, parse_only);
+            return entry(val, e, overload, parse_only, n);
         } else {
             bool is_nud = k == notation_entry_kind::NuD;
             unsigned sz; char _g;
@@ -416,7 +424,7 @@ struct notation_config {
                 ts.push_back(read_transition(d));
             unsigned priority;
             d >> priority;
-            return entry(is_nud, to_list(ts.begin(), ts.end()), e, overload, priority, g, parse_only);
+            return entry(is_nud, to_list(ts.begin(), ts.end()), e, overload, priority, g, parse_only, n);
         }
     }
     static optional<unsigned> get_fingerprint(entry const &) {
@@ -450,6 +458,12 @@ parse_table const & get_reserved_nud_table(environment const & env) {
 
 parse_table const & get_reserved_led_table(environment const & env) {
     return notation_ext::get_state(env).m_reserved_led;
+}
+
+notation_entry const * get_notation_entry(environment const & env, name const & n) {
+    if (auto ptr = notation_ext::get_state(env).m_notation_names.find(n))
+        return ptr->get();
+    return nullptr;
 }
 
 environment add_mpz_notation(environment const & env, mpz const & n, expr const & e, bool overload, bool parse_only) {

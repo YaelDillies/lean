@@ -67,6 +67,7 @@ name const * g_forall_congr = nullptr;
 name const * g_forall_congr_eq = nullptr;
 name const * g_forall_not_of_not_exists = nullptr;
 name const * g_format = nullptr;
+name const * g_function = nullptr;
 name const * g_funext = nullptr;
 name const * g_has_add = nullptr;
 name const * g_has_add_add = nullptr;
@@ -111,6 +112,7 @@ name const * g_iff_intro = nullptr;
 name const * g_iff_mp = nullptr;
 name const * g_iff_mpr = nullptr;
 name const * g_iff_refl = nullptr;
+name const * g_iff_rfl = nullptr;
 name const * g_iff_symm = nullptr;
 name const * g_iff_trans = nullptr;
 name const * g_iff_false_intro = nullptr;
@@ -348,6 +350,7 @@ void initialize_constants() {
     g_forall_congr_eq = new name{"forall_congr_eq"};
     g_forall_not_of_not_exists = new name{"forall_not_of_not_exists"};
     g_format = new name{"format"};
+    g_function = new name{"function"};
     g_funext = new name{"funext"};
     g_has_add = new name{"has_add"};
     g_has_add_add = new name{"has_add", "add"};
@@ -392,6 +395,7 @@ void initialize_constants() {
     g_iff_mp = new name{"iff", "mp"};
     g_iff_mpr = new name{"iff", "mpr"};
     g_iff_refl = new name{"iff", "refl"};
+    g_iff_rfl = new name{"iff", "rfl"};
     g_iff_symm = new name{"iff", "symm"};
     g_iff_trans = new name{"iff", "trans"};
     g_iff_false_intro = new name{"iff_false_intro"};
@@ -630,6 +634,7 @@ void finalize_constants() {
     delete g_forall_congr_eq;
     delete g_forall_not_of_not_exists;
     delete g_format;
+    delete g_function;
     delete g_funext;
     delete g_has_add;
     delete g_has_add_add;
@@ -674,6 +679,7 @@ void finalize_constants() {
     delete g_iff_mp;
     delete g_iff_mpr;
     delete g_iff_refl;
+    delete g_iff_rfl;
     delete g_iff_symm;
     delete g_iff_trans;
     delete g_iff_false_intro;
@@ -911,6 +917,7 @@ name const & get_forall_congr_name() { return *g_forall_congr; }
 name const & get_forall_congr_eq_name() { return *g_forall_congr_eq; }
 name const & get_forall_not_of_not_exists_name() { return *g_forall_not_of_not_exists; }
 name const & get_format_name() { return *g_format; }
+name const & get_function_name() { return *g_function; }
 name const & get_funext_name() { return *g_funext; }
 name const & get_has_add_name() { return *g_has_add; }
 name const & get_has_add_add_name() { return *g_has_add_add; }
@@ -955,6 +962,7 @@ name const & get_iff_intro_name() { return *g_iff_intro; }
 name const & get_iff_mp_name() { return *g_iff_mp; }
 name const & get_iff_mpr_name() { return *g_iff_mpr; }
 name const & get_iff_refl_name() { return *g_iff_refl; }
+name const & get_iff_rfl_name() { return *g_iff_rfl; }
 name const & get_iff_symm_name() { return *g_iff_symm; }
 name const & get_iff_trans_name() { return *g_iff_trans; }
 name const & get_iff_false_intro_name() { return *g_iff_false_intro; }

@@ -62,6 +62,7 @@ forall_congr
 forall_congr_eq
 forall_not_of_not_exists
 format
+function
 funext
 has_add
 has_add.add
@@ -106,6 +107,7 @@ iff.intro
 iff.mp
 iff.mpr
 iff.refl
+iff.rfl
 iff.symm
 iff.trans
 iff_false_intro

@@ -721,11 +721,11 @@ static unsigned g_level_add_prec = 10;
 unsigned parser::get_small_nat() {
     mpz val = get_num_val().get_numerator();
     lean_assert(val >= 0);
-    if (!val.is_unsigned_int()) {
+    if (!val.is<unsigned>()) {
         maybe_throw_error({"invalid numeral, value does not fit in a machine integer", pos()});
         return 0;
     }
-    return val.get_unsigned_int();
+    return static_cast<unsigned>(val);
 }
 
 pair<ast_id, std::string> parser::parse_string_lit() {
@@ -2622,7 +2622,7 @@ ast_id parser::parse_command(cmd_meta const & meta) {
 
     name cmd_name = get_token_info().value();
     if (auto it = cmds().find(cmd_name)) {
-        auto cmd_id = new_ast(cmd_name, pos()).m_id;
+        auto& cmd_ast = new_ast(cmd_name, pos());
         lazy_type_context tc(m_env, get_options());
         scope_global_ios scope1(m_ios);
         scope_trace_env  scope2(m_env, m_ios.get_options(), tc);
@@ -2631,13 +2631,14 @@ ast_id parser::parse_command(cmd_meta const & meta) {
             in_notation_ctx ctx(*this);
             if (it->get_skip_token())
                 next();
-            m_env = it->get_fn()(*this, cmd_id, meta);
+            m_env = it->get_fn()(*this, cmd_ast.m_id, meta);
         } else {
             if (it->get_skip_token())
                 next();
-            m_env = it->get_fn()(*this, cmd_id, meta);
+            m_env = it->get_fn()(*this, cmd_ast.m_id, meta);
         }
-        return cmd_id;
+        cmd_ast.m_end = end_pos();
+        return cmd_ast.m_id;
     } else {
         auto p = pos();
         next();
